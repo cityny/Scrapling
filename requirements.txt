@@ -1,0 +1,28 @@
+# Core dependencies
+lxml>=6.0.2
+cssselect>=1.4.0
+orjson>=3.11.7
+tld>=0.13.2
+w3lib>=2.4.0
+typing_extensions
+fastapi>=0.95.0
+uvicorn[standard]>=0.22.0
+pydantic>=1.10.7
+
+# Fetchers / browser / networking
+click>=8.3.0
+curl_cffi>=0.14.0
+playwright==1.58.0
+patchright==1.58.2
+browserforge>=1.2.4
+apify-fingerprint-datapoints>=0.11.0
+msgspec>=0.20.0
+anyio>=4.12.1
+
+# AI / MCP / misc
+mcp>=1.26.0
+markdownify>=1.2.0
+IPython>=8.37
+
+# Utilities referenced in repository
+GitPython>=3.1.30

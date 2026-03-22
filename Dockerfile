@@ -12,6 +12,7 @@ WORKDIR /app
 
 # Copy dependency file first for better layer caching
 COPY pyproject.toml ./
+COPY requirements.txt ./
 
 # Install dependencies only
 RUN --mount=type=cache,target=/root/.cache/uv \
@@ -34,9 +35,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Expose port for HTTP server
 EXPOSE 8000
 
-# Ensure FastAPI + Uvicorn are available at build time
+# Ensure required Python packages are available at build time
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir fastapi "uvicorn[standard]"
+    pip install --no-cache-dir -r requirements.txt
 
 # Default command: run as web service with Uvicorn
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
