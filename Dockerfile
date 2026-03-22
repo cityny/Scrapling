@@ -31,11 +31,12 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# Expose port for MCP server HTTP transport
+# Expose port for HTTP server
 EXPOSE 8000
 
-# Set entrypoint to run scrapling
-ENTRYPOINT ["uv", "run", "scrapling"]
+# Ensure FastAPI + Uvicorn are available at build time
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir fastapi "uvicorn[standard]"
 
-# Default command (can be overridden)
-CMD ["--help"]
+# Default command: run as web service with Uvicorn
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
