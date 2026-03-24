@@ -72,6 +72,9 @@ def scrape(req: ScrapeRequest, request: Request):
         # Keep original page_action value to report its incoming type
         pa_raw = fetch_kwargs.get("page_action")
 
+        # Extract page_action to avoid leaking it into HTTP fetchers that don't accept it
+        page_action_value = fetch_kwargs.pop("page_action", None)
+
         # If the caller passed `page_action` as a string (via JSON),
         # convert it into a callable that will be executed inside Playwright's page
         # context using `page.evaluate`. We create a sync callable because
@@ -98,10 +101,13 @@ def scrape(req: ScrapeRequest, request: Request):
 
         if req.impersonate:
             # Browser-based stealth fetch
+            if page_action_value is not None:
+                fetch_kwargs["page_action"] = page_action_value
             response = StealthyFetcher.fetch(req.url, **fetch_kwargs)
         else:
             # Simple HTTP fetch
             # Use GET by default; forward extra kwargs if supported by Fetcher
+            # Ensure page_action is not forwarded to HTTP Fetcher
             response = Fetcher.get(req.url, **fetch_kwargs)
 
         result: Dict[str, Any] = {"url": req.url, "success": True, "data": {}}
