@@ -179,57 +179,70 @@ async def _run_background_task(task_id: str, code: str, env: Optional[Dict[str, 
         # ensure keys/values are strings
         for k, v in env.items():
             child_env[str(k)] = str(v)
+    async def _drain_stream_to_file(stream: asyncio.StreamReader, path: str):
+        try:
+            with open(path, 'ab') as f:
+                while True:
+                    chunk = await stream.read(4096)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    f.flush()
+        except Exception:
+            pass
 
     tmp_file = None
+    out_task = None
+    err_task = None
     try:
-        # write code to a temp file (safer to rewrite than reuse the caller's temp)
+        # write code to a temp file
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as tmp:
             tmp.write(code)
             tmp.flush()
             tmp_file = tmp.name
 
-        # Open stdout/stderr files for append in binary mode
-        stdout_f = open(stdout_path, 'ab')
-        stderr_f = open(stderr_path, 'ab')
+        # Force unbuffered python in child env and/or use -u
+        child_env["PYTHONUNBUFFERED"] = "1"
 
         proc = await asyncio.create_subprocess_exec(
-            sys.executable, tmp_file,
-            stdout=stdout_f,
-            stderr=stderr_f,
+            sys.executable, "-u", tmp_file,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
             env=child_env,
         )
+
+        # Start tasks to drain stdout/stderr into files while process runs
+        if proc.stdout:
+            out_task = asyncio.create_task(_drain_stream_to_file(proc.stdout, stdout_path))
+        if proc.stderr:
+            err_task = asyncio.create_task(_drain_stream_to_file(proc.stderr, stderr_path))
 
         try:
             await asyncio.wait_for(proc.wait(), timeout=timeout)
             exit_code = proc.returncode
-            status = "completed"
+            status = "completed" if exit_code == 0 else "failed"
         except asyncio.TimeoutError:
             proc.kill()
             await proc.wait()
             exit_code = -1
             status = "failed"
 
+        # Ensure any remaining output is drained
+        if out_task:
+            await out_task
+        if err_task:
+            await err_task
+
         task.update({"status": status, "exit_code": exit_code, "finished_at": time.time()})
 
     except Exception as e:
         task.update({"status": "failed", "exit_code": -1, "finished_at": time.time()})
-        # write exception to stderr file for diagnostics
         try:
             with open(stderr_path, 'ab') as ef:
                 ef.write(str(e).encode('utf-8', errors='replace'))
         except Exception:
             pass
     finally:
-        try:
-            if stdout_f:
-                stdout_f.close()
-        except Exception:
-            pass
-        try:
-            if stderr_f:
-                stderr_f.close()
-        except Exception:
-            pass
         if tmp_file and os.path.exists(tmp_file):
             try:
                 os.remove(tmp_file)
