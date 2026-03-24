@@ -69,6 +69,24 @@ def scrape(req: ScrapeRequest, request: Request):
     try:
         fetch_kwargs = req.extra or {}
 
+        # If the caller passed `page_action` as a string (via JSON),
+        # convert it into a callable that will be executed inside Playwright's page
+        # context using `page.evaluate`. We create a sync callable because
+        # this endpoint uses the synchronous fetcher path.
+        pa = fetch_kwargs.get("page_action")
+        if isinstance(pa, str):
+            code_str = pa
+            def _page_action_from_string(page):
+                try:
+                    # Wrap code in an async IIFE so Promise-returning expressions work
+                    return page.evaluate(f"(async () => {{ {code_str} }})()")
+                except Exception as e:
+                    # Minimal debugging output; avoid failing the whole fetch
+                    print(f"DEBUG: Error ejecutando page_action string: {e}")
+                    return None
+
+            fetch_kwargs["page_action"] = _page_action_from_string
+
         if req.impersonate:
             # Browser-based stealth fetch
             response = StealthyFetcher.fetch(req.url, **fetch_kwargs)
@@ -108,9 +126,16 @@ def scrape(req: ScrapeRequest, request: Request):
         result["meta"] = {"headers": getattr(response, "headers", {}), "status": getattr(response, "status", None)}
         # Include page_action result if present (may be None)
         try:
-            result["data"]["page_action_result"] = getattr(response, "meta", {}).get("page_action_result")
+            page_action_result_val = getattr(response, "meta", {}).get("page_action_result")
         except Exception:
-            result["data"]["page_action_result"] = None
+            page_action_result_val = None
+        result["data"]["page_action_result"] = page_action_result_val
+
+        # DEBUG: log response.meta so we can trace page_action propagation in API calls
+        try:
+            print(f"DEBUG: response.meta = {getattr(response, 'meta', {})}")
+        except Exception:
+            pass
 
         return result
 

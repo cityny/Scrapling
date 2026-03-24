@@ -248,6 +248,11 @@ class StealthySession(SyncSession, StealthySessionMixin):
                             page_action_result = params.page_action(page)
                         except Exception as e:  # pragma: no cover
                             log.error(f"Error executing page_action: {e}")
+                    # DEBUG: log the captured result from page_action (can be None)
+                    try:
+                        log.info(f"DEBUG: Resultado de page_action capturado: {page_action_result}")
+                    except Exception:
+                        pass
 
                     if params.wait_selector:
                         try:
@@ -507,6 +512,11 @@ class AsyncStealthySession(AsyncSession, StealthySessionMixin):
                             page_action_result = await params.page_action(page)
                         except Exception as e:  # pragma: no cover
                             log.error(f"Error executing page_action: {e}")
+                    # DEBUG: log the captured result from page_action (can be None)
+                    try:
+                        log.info(f"DEBUG: Resultado de page_action capturado: {page_action_result}")
+                    except Exception:
+                        pass
 
                     if params.wait_selector:
                         try:

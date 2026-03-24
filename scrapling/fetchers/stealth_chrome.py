@@ -105,5 +105,18 @@ class StealthyFetcher(BaseFetcher):
 
         kwargs["selector_config"] = {**cls._generate_parser_arguments(), **selector_config}
 
+        # If caller provided `page_action` as a string, convert it into an async callable
+        pa = kwargs.get("page_action")
+        if isinstance(pa, str):
+            code_str = pa
+            async def _page_action_from_string_async(page):
+                try:
+                    return await page.evaluate(f"(async () => {{ {code_str} }})()")
+                except Exception as e:
+                    print(f"DEBUG: Error ejecutando page_action string (async): {e}")
+                    return None
+
+            kwargs["page_action"] = _page_action_from_string_async
+
         async with AsyncStealthySession(**kwargs) as engine:
             return await engine.fetch(url)
