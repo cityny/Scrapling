@@ -284,13 +284,13 @@ class StealthySession(SyncSession, StealthySessionMixin):
 
                     page.wait_for_timeout(params.wait)
 
-                        response = ResponseFactory.from_playwright_response(
-                            page,
-                            first_response,
-                            final_response[0],
-                            params.selector_config,
-                            meta={"proxy": proxy, "page_action_result": page_action_result_meta},
-                        )
+                    response = ResponseFactory.from_playwright_response(
+                        page,
+                        first_response,
+                        final_response[0],
+                        params.selector_config,
+                        meta={"proxy": proxy, "page_action_result": page_action_result_meta},
+                    )
                     return response
 
                 except Exception as e:
