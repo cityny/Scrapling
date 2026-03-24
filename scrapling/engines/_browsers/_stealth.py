@@ -242,17 +242,37 @@ class StealthySession(SyncSession, StealthySessionMixin):
                         # Make sure the page is fully loaded after the captcha
                         self._wait_for_page_stability(page, params.load_dom, params.network_idle)
 
-                    page_action_result = None
-                    if params.page_action:
+                        page_action_result = None
+                        if params.page_action:
+                            # DEBUG: indicate engine will execute page_action
+                            try:
+                                print('DEBUG ENGINE: Iniciando ejecución de page_action en el navegador...')
+                            except Exception:
+                                pass
+
+                            try:
+                                page_action_result = params.page_action(page)
+                            except Exception as e:  # pragma: no cover
+                                log.error(f"Error executing page_action: {e}")
+                                try:
+                                    print(f"DEBUG ERROR: Falló la ejecución de JS: {e}")
+                                except Exception:
+                                    pass
+
+                        # Ensure meta key exists and provide explicit VACÍO when None
                         try:
-                            page_action_result = params.page_action(page)
-                        except Exception as e:  # pragma: no cover
-                            log.error(f"Error executing page_action: {e}")
-                    # DEBUG: log the captured result from page_action (can be None)
-                    try:
-                        log.info(f"DEBUG: Resultado de page_action capturado: {page_action_result}")
-                    except Exception:
-                        pass
+                            if page_action_result is None:
+                                page_action_result_meta = "VACÍO"
+                            else:
+                                page_action_result_meta = page_action_result
+                        except Exception:
+                            page_action_result_meta = "VACÍO"
+
+                        # DEBUG: log the captured result from page_action (can be VACÍO)
+                        try:
+                            log.info(f"DEBUG: Resultado de page_action capturado: {page_action_result_meta}")
+                        except Exception:
+                            pass
 
                     if params.wait_selector:
                         try:
@@ -264,13 +284,13 @@ class StealthySession(SyncSession, StealthySessionMixin):
 
                     page.wait_for_timeout(params.wait)
 
-                    response = ResponseFactory.from_playwright_response(
-                        page,
-                        first_response,
-                        final_response[0],
-                        params.selector_config,
-                        meta={"proxy": proxy, "page_action_result": page_action_result},
-                    )
+                        response = ResponseFactory.from_playwright_response(
+                            page,
+                            first_response,
+                            final_response[0],
+                            params.selector_config,
+                            meta={"proxy": proxy, "page_action_result": page_action_result_meta},
+                        )
                     return response
 
                 except Exception as e:
@@ -506,17 +526,37 @@ class AsyncStealthySession(AsyncSession, StealthySessionMixin):
                         # Make sure the page is fully loaded after the captcha
                         await self._wait_for_page_stability(page, params.load_dom, params.network_idle)
 
-                    page_action_result = None
-                    if params.page_action:
+                        page_action_result = None
+                        if params.page_action:
+                            # DEBUG: indicate engine will execute page_action
+                            try:
+                                print('DEBUG ENGINE: Iniciando ejecución de page_action en el navegador...')
+                            except Exception:
+                                pass
+
+                            try:
+                                page_action_result = await params.page_action(page)
+                            except Exception as e:  # pragma: no cover
+                                log.error(f"Error executing page_action: {e}")
+                                try:
+                                    print(f"DEBUG ERROR: Falló la ejecución de JS: {e}")
+                                except Exception:
+                                    pass
+
+                        # Ensure meta key exists and provide explicit VACÍO when None
                         try:
-                            page_action_result = await params.page_action(page)
-                        except Exception as e:  # pragma: no cover
-                            log.error(f"Error executing page_action: {e}")
-                    # DEBUG: log the captured result from page_action (can be None)
-                    try:
-                        log.info(f"DEBUG: Resultado de page_action capturado: {page_action_result}")
-                    except Exception:
-                        pass
+                            if page_action_result is None:
+                                page_action_result_meta = "VACÍO"
+                            else:
+                                page_action_result_meta = page_action_result
+                        except Exception:
+                            page_action_result_meta = "VACÍO"
+
+                        # DEBUG: log the captured result from page_action (can be VACÍO)
+                        try:
+                            log.info(f"DEBUG: Resultado de page_action capturado: {page_action_result_meta}")
+                        except Exception:
+                            pass
 
                     if params.wait_selector:
                         try:
@@ -528,13 +568,13 @@ class AsyncStealthySession(AsyncSession, StealthySessionMixin):
 
                     await page.wait_for_timeout(params.wait)
 
-                    response = await ResponseFactory.from_async_playwright_response(
-                        page,
-                        first_response,
-                        final_response[0],
-                        params.selector_config,
-                        meta={"proxy": proxy, "page_action_result": page_action_result},
-                    )
+                        response = await ResponseFactory.from_async_playwright_response(
+                            page,
+                            first_response,
+                            final_response[0],
+                            params.selector_config,
+                            meta={"proxy": proxy, "page_action_result": page_action_result_meta},
+                        )
                     return response
 
                 except Exception as e:
