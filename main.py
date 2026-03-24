@@ -106,6 +106,11 @@ def scrape(req: ScrapeRequest, request: Request):
 
         # Add some meta info
         result["meta"] = {"headers": getattr(response, "headers", {}), "status": getattr(response, "status", None)}
+        # Include page_action result if present (may be None)
+        try:
+            result["data"]["page_action_result"] = getattr(response, "meta", {}).get("page_action_result")
+        except Exception:
+            result["data"]["page_action_result"] = None
 
         return result
 
