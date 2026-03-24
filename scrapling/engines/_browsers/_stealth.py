@@ -242,9 +242,10 @@ class StealthySession(SyncSession, StealthySessionMixin):
                         # Make sure the page is fully loaded after the captcha
                         self._wait_for_page_stability(page, params.load_dom, params.network_idle)
 
+                    page_action_result = None
                     if params.page_action:
                         try:
-                            _ = params.page_action(page)
+                            page_action_result = params.page_action(page)
                         except Exception as e:  # pragma: no cover
                             log.error(f"Error executing page_action: {e}")
 
@@ -259,7 +260,11 @@ class StealthySession(SyncSession, StealthySessionMixin):
                     page.wait_for_timeout(params.wait)
 
                     response = ResponseFactory.from_playwright_response(
-                        page, first_response, final_response[0], params.selector_config, meta={"proxy": proxy}
+                        page,
+                        first_response,
+                        final_response[0],
+                        params.selector_config,
+                        meta={"proxy": proxy, "page_action_result": page_action_result},
                     )
                     return response
 
@@ -496,9 +501,10 @@ class AsyncStealthySession(AsyncSession, StealthySessionMixin):
                         # Make sure the page is fully loaded after the captcha
                         await self._wait_for_page_stability(page, params.load_dom, params.network_idle)
 
+                    page_action_result = None
                     if params.page_action:
                         try:
-                            _ = await params.page_action(page)
+                            page_action_result = await params.page_action(page)
                         except Exception as e:  # pragma: no cover
                             log.error(f"Error executing page_action: {e}")
 
@@ -513,7 +519,11 @@ class AsyncStealthySession(AsyncSession, StealthySessionMixin):
                     await page.wait_for_timeout(params.wait)
 
                     response = await ResponseFactory.from_async_playwright_response(
-                        page, first_response, final_response[0], params.selector_config, meta={"proxy": proxy}
+                        page,
+                        first_response,
+                        final_response[0],
+                        params.selector_config,
+                        meta={"proxy": proxy, "page_action_result": page_action_result},
                     )
                     return response
 

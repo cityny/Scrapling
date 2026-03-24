@@ -150,9 +150,10 @@ class DynamicSession(SyncSession, DynamicSessionMixin):
                     if not first_response:
                         raise RuntimeError(f"Failed to get response for {url}")
 
+                    page_action_result = None
                     if params.page_action:
                         try:
-                            _ = params.page_action(page)
+                            page_action_result = params.page_action(page)
                         except Exception as e:  # pragma: no cover
                             log.error(f"Error executing page_action: {e}")
 
@@ -167,7 +168,11 @@ class DynamicSession(SyncSession, DynamicSessionMixin):
                     page.wait_for_timeout(params.wait)
 
                     response = ResponseFactory.from_playwright_response(
-                        page, first_response, final_response[0], params.selector_config, meta={"proxy": proxy}
+                        page,
+                        first_response,
+                        final_response[0],
+                        params.selector_config,
+                        meta={"proxy": proxy, "page_action_result": page_action_result},
                     )
                     return response
 
@@ -317,9 +322,10 @@ class AsyncDynamicSession(AsyncSession, DynamicSessionMixin):
                     if not first_response:
                         raise RuntimeError(f"Failed to get response for {url}")
 
+                    page_action_result = None
                     if params.page_action:
                         try:
-                            _ = await params.page_action(page)
+                            page_action_result = await params.page_action(page)
                         except Exception as e:  # pragma: no cover
                             log.error(f"Error executing page_action: {e}")
 
@@ -334,7 +340,11 @@ class AsyncDynamicSession(AsyncSession, DynamicSessionMixin):
                     await page.wait_for_timeout(params.wait)
 
                     response = await ResponseFactory.from_async_playwright_response(
-                        page, first_response, final_response[0], params.selector_config, meta={"proxy": proxy}
+                        page,
+                        first_response,
+                        final_response[0],
+                        params.selector_config,
+                        meta={"proxy": proxy, "page_action_result": page_action_result},
                     )
                     return response
 
