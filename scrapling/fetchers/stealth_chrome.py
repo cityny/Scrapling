@@ -48,6 +48,9 @@ class StealthyFetcher(BaseFetcher):
         :param additional_args: Additional arguments to be passed to Playwright's context as additional settings, and it takes higher priority than Scrapling's settings.
         :return: A `Response` object.
         """
+        # Extract page_action to avoid accidental forwarding to underlying HTTP sessions
+        page_action_val = kwargs.pop("page_action", None)
+
         selector_config = kwargs.get("selector_config", {}) or kwargs.get(
             "custom_config", {}
         )  # Checking `custom_config` for backward compatibility
@@ -55,6 +58,9 @@ class StealthyFetcher(BaseFetcher):
             raise TypeError("Argument `selector_config` must be a dictionary.")
 
         kwargs["selector_config"] = {**cls._generate_parser_arguments(), **selector_config}
+
+        if page_action_val is not None:
+            kwargs["page_action"] = page_action_val
 
         with StealthySession(**kwargs) as engine:
             return engine.fetch(url)
@@ -97,6 +103,9 @@ class StealthyFetcher(BaseFetcher):
         :param additional_args: Additional arguments to be passed to Playwright's context as additional settings, and it takes higher priority than Scrapling's settings.
         :return: A `Response` object.
         """
+        # Extract page_action to avoid accidental forwarding to underlying HTTP sessions
+        page_action_val = kwargs.pop("page_action", None)
+
         selector_config = kwargs.get("selector_config", {}) or kwargs.get(
             "custom_config", {}
         )  # Checking `custom_config` for backward compatibility
@@ -106,7 +115,7 @@ class StealthyFetcher(BaseFetcher):
         kwargs["selector_config"] = {**cls._generate_parser_arguments(), **selector_config}
 
         # If caller provided `page_action` as a string, convert it into an async callable
-        pa = kwargs.get("page_action")
+        pa = page_action_val if page_action_val is not None else kwargs.get("page_action")
         if isinstance(pa, str):
             code_str = pa
             async def _page_action_from_string_async(page):
@@ -117,6 +126,9 @@ class StealthyFetcher(BaseFetcher):
                     return None
 
             kwargs["page_action"] = _page_action_from_string_async
+
+        if page_action_val is not None and "page_action" not in kwargs:
+            kwargs["page_action"] = page_action_val
 
         async with AsyncStealthySession(**kwargs) as engine:
             return await engine.fetch(url)
