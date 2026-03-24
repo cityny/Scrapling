@@ -69,6 +69,9 @@ def scrape(req: ScrapeRequest, request: Request):
     try:
         fetch_kwargs = req.extra or {}
 
+        # Keep original page_action value to report its incoming type
+        pa_raw = fetch_kwargs.get("page_action")
+
         # If the caller passed `page_action` as a string (via JSON),
         # convert it into a callable that will be executed inside Playwright's page
         # context using `page.evaluate`. We create a sync callable because
@@ -86,6 +89,12 @@ def scrape(req: ScrapeRequest, request: Request):
                     return None
 
             fetch_kwargs["page_action"] = _page_action_from_string
+
+        # DEBUG: report incoming request and page_action types (raw vs converted)
+        try:
+            print(f"DEBUG API: Recibida petición para {req.url}. page_action incoming type: {type(pa_raw)}; current type: {type(fetch_kwargs.get('page_action'))}")
+        except Exception:
+            pass
 
         if req.impersonate:
             # Browser-based stealth fetch
