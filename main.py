@@ -75,27 +75,22 @@ def scrape(req: ScrapeRequest, request: Request):
         # Extract page_action to avoid leaking it into HTTP fetchers that don't accept it
         page_action_value = fetch_kwargs.pop("page_action", None)
 
-        # If the caller passed `page_action` as a string (via JSON),
-        # convert it into a callable that will be executed inside Playwright's page
-        # context using `page.evaluate`. We create a sync callable because
-        # this endpoint uses the synchronous fetcher path.
-        pa = fetch_kwargs.get("page_action")
-        if isinstance(pa, str):
-            code_str = pa
+        # If the caller passed `page_action` as a string (via JSON), convert it
+        # into a callable that will be executed inside Playwright's page context.
+        if isinstance(page_action_value, str):
+            code_str = page_action_value
             def _page_action_from_string(page):
                 try:
-                    # Wrap code in an async IIFE so Promise-returning expressions work
                     return page.evaluate(f"(async () => {{ {code_str} }})()")
                 except Exception as e:
-                    # Minimal debugging output; avoid failing the whole fetch
                     print(f"DEBUG: Error ejecutando page_action string: {e}")
                     return None
 
-            fetch_kwargs["page_action"] = _page_action_from_string
+            page_action_value = _page_action_from_string
 
         # DEBUG: report incoming request and page_action types (raw vs converted)
         try:
-            print(f"DEBUG API: Recibida petición para {req.url}. page_action incoming type: {type(pa_raw)}; current type: {type(fetch_kwargs.get('page_action'))}")
+            print(f"DEBUG API: Recibida petición para {req.url}. page_action incoming type: {type(pa_raw)}; converted type: {type(page_action_value)}")
         except Exception:
             pass
 
