@@ -6,6 +6,10 @@ from pydantic import BaseModel, Field
 
 from scrapling.fetchers.stealth_chrome import StealthyFetcher
 from scrapling.fetchers.requests import Fetcher
+import asyncio
+import tempfile
+import sys
+import os
 
 
 class ScrapeRequest(BaseModel):
@@ -13,6 +17,11 @@ class ScrapeRequest(BaseModel):
     impersonate: bool = Field(False, description="Use browser stealth fetcher if true")
     selectors: Optional[Dict[str, str]] = Field(None, description="Mapping name -> CSS selector")
     extra: Optional[Dict[str, Any]] = Field(None, description="Extra kwargs forwarded to the fetcher")
+
+
+class RunPythonRequest(BaseModel):
+    code: str = Field(..., description="Python code to execute")
+    timeout: int = Field(30, description="Timeout in seconds for execution")
 
 
 app = FastAPI(title="Scrapling Microservice")
@@ -80,3 +89,52 @@ def scrape(req: ScrapeRequest, request: Request):
     except Exception as e:
         # Always return 200 with success: false to avoid stopping n8n flows
         return {"success": False, "error": str(e), "url": getattr(req, "url", None)}
+
+
+@app.post("/run-python")
+async def run_python(req: RunPythonRequest):
+    max_chars = 50000
+    tmp_path = None
+    try:
+        # Create temporary file with the provided code
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as tmp:
+            tmp.write(req.code)
+            tmp.flush()
+            tmp_path = tmp.name
+
+        # Spawn subprocess asynchronously
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable, tmp_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        try:
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=req.timeout)
+            exit_code = proc.returncode
+            success = True
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            stdout_bytes, stderr_bytes = b"", f"Timeout de {req.timeout} segundos excedido".encode()
+            exit_code = -1
+            success = False
+
+        stdout = stdout_bytes.decode('utf-8', errors='replace') if isinstance(stdout_bytes, (bytes, bytearray)) else str(stdout_bytes)
+        stderr = stderr_bytes.decode('utf-8', errors='replace') if isinstance(stderr_bytes, (bytes, bytearray)) else str(stderr_bytes)
+
+        if len(stdout) > max_chars:
+            stdout = stdout[:max_chars] + "\n...[truncated]"
+        if len(stderr) > max_chars:
+            stderr = stderr[:max_chars] + "\n...[truncated]"
+
+        return {"success": success, "stdout": stdout, "stderr": stderr, "exit_code": exit_code}
+
+    except Exception as e:
+        return {"success": False, "stdout": "", "stderr": str(e), "exit_code": -1}
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
