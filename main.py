@@ -10,6 +10,9 @@ import asyncio
 import tempfile
 import sys
 import os
+import uuid
+import time
+from typing import Union
 
 
 class ScrapeRequest(BaseModel):
@@ -22,6 +25,26 @@ class ScrapeRequest(BaseModel):
 class RunPythonRequest(BaseModel):
     code: str = Field(..., description="Python code to execute")
     timeout: int = Field(30, description="Timeout in seconds for execution")
+
+
+# Tasks store for long-running processes (polling model)
+# task structure: {
+#   task_id: {
+#       "status": "running"|"completed"|"failed",
+#       "exit_code": int|None,
+#       "stdout_path": str,
+#       "stderr_path": str,
+#       "created_at": float,
+#       "finished_at": float|None
+#   }
+# }
+tasks: Dict[str, Dict[str, Union[str, int, float, None]]] = {}
+
+
+class RunAsyncRequest(BaseModel):
+    code: str = Field(..., description="Python code to execute")
+    env: Optional[Dict[str, str]] = Field(None, description="Environment vars to inject into the child process")
+    timeout: int = Field(300, description="Timeout in seconds for execution")
 
 
 app = FastAPI(title="Scrapling Microservice")
@@ -138,3 +161,170 @@ async def run_python(req: RunPythonRequest):
                 os.remove(tmp_path)
             except OSError:
                 pass
+
+
+async def _run_background_task(task_id: str, code: str, env: Optional[Dict[str, str]], timeout: int):
+    """Background coroutine that runs the provided code in a subprocess,
+    streaming stdout/stderr to files and updating the tasks dict."""
+    task = tasks.get(task_id)
+    if not task:
+        return
+
+    stdout_path = task["stdout_path"]
+    stderr_path = task["stderr_path"]
+
+    # Prepare environment for child process
+    child_env = dict(os.environ)
+    if env:
+        # ensure keys/values are strings
+        for k, v in env.items():
+            child_env[str(k)] = str(v)
+
+    tmp_file = None
+    try:
+        # write code to a temp file (safer to rewrite than reuse the caller's temp)
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as tmp:
+            tmp.write(code)
+            tmp.flush()
+            tmp_file = tmp.name
+
+        # Open stdout/stderr files for append in binary mode
+        stdout_f = open(stdout_path, 'ab')
+        stderr_f = open(stderr_path, 'ab')
+
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable, tmp_file,
+            stdout=stdout_f,
+            stderr=stderr_f,
+            env=child_env,
+        )
+
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=timeout)
+            exit_code = proc.returncode
+            status = "completed"
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            exit_code = -1
+            status = "failed"
+
+        task.update({"status": status, "exit_code": exit_code, "finished_at": time.time()})
+
+    except Exception as e:
+        task.update({"status": "failed", "exit_code": -1, "finished_at": time.time()})
+        # write exception to stderr file for diagnostics
+        try:
+            with open(stderr_path, 'ab') as ef:
+                ef.write(str(e).encode('utf-8', errors='replace'))
+        except Exception:
+            pass
+    finally:
+        try:
+            if stdout_f:
+                stdout_f.close()
+        except Exception:
+            pass
+        try:
+            if stderr_f:
+                stderr_f.close()
+        except Exception:
+            pass
+        if tmp_file and os.path.exists(tmp_file):
+            try:
+                os.remove(tmp_file)
+            except Exception:
+                pass
+
+
+@app.post("/run-async")
+async def run_async(req: RunAsyncRequest):
+    # Create task entry
+    task_id = str(uuid.uuid4())
+    created_at = time.time()
+
+    stdout_tmp = tempfile.NamedTemporaryFile(mode='wb', delete=False)
+    stderr_tmp = tempfile.NamedTemporaryFile(mode='wb', delete=False)
+    stdout_tmp.close()
+    stderr_tmp.close()
+
+    tasks[task_id] = {
+        "status": "running",
+        "exit_code": None,
+        "stdout_path": stdout_tmp.name,
+        "stderr_path": stderr_tmp.name,
+        "created_at": created_at,
+        "finished_at": None,
+    }
+
+    # Launch background task (non-blocking)
+    asyncio.create_task(_run_background_task(task_id, req.code, req.env, req.timeout))
+
+    return {"task_id": task_id}
+
+
+@app.get("/check/{task_id}")
+async def check_task(task_id: str):
+    info = tasks.get(task_id)
+    if not info:
+        return {"status": "not_found", "exit_code": None, "stdout": "", "stderr": ""}
+
+    # Read accumulated stdout/stderr up to a cap
+    cap = 50000
+    stdout = ""
+    stderr = ""
+    try:
+        if os.path.exists(info["stdout_path"]):
+            with open(info["stdout_path"], 'rb') as f:
+                data = f.read()
+                stdout = data.decode('utf-8', errors='replace')
+                if len(stdout) > cap:
+                    stdout = stdout[-cap:]
+        if os.path.exists(info["stderr_path"]):
+            with open(info["stderr_path"], 'rb') as f:
+                data = f.read()
+                stderr = data.decode('utf-8', errors='replace')
+                if len(stderr) > cap:
+                    stderr = stderr[-cap:]
+    except Exception as e:
+        stderr = f"Error reading logs: {e}"
+
+    return {
+        "status": info.get("status"),
+        "exit_code": info.get("exit_code"),
+        "stdout": stdout,
+        "stderr": stderr,
+    }
+
+
+async def _cleanup_loop():
+    """Periodically remove tasks older than 1 hour from memory and delete their tmp files."""
+    while True:
+        now = time.time()
+        expire_after = 3600
+        to_delete = []
+        for tid, info in list(tasks.items()):
+            finished = info.get("finished_at")
+            if finished and (now - finished) > expire_after:
+                to_delete.append(tid)
+
+        for tid in to_delete:
+            info = tasks.pop(tid, None)
+            if info:
+                try:
+                    if info.get("stdout_path") and os.path.exists(info.get("stdout_path")):
+                        os.remove(info.get("stdout_path"))
+                except Exception:
+                    pass
+                try:
+                    if info.get("stderr_path") and os.path.exists(info.get("stderr_path")):
+                        os.remove(info.get("stderr_path"))
+                except Exception:
+                    pass
+
+        await asyncio.sleep(60)
+
+
+@app.on_event("startup")
+async def _start_cleanup():
+    asyncio.create_task(_cleanup_loop())
