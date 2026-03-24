@@ -83,12 +83,13 @@ Esta tabla resume los 4 endpoints principales disponibles en el contenedor de Sc
 
 ### 📋 Tabla de Endpoints
 
-| Endpoint      | Método | Propósito                                                | Payload Clave                   | Uso Principal                                                    |
-| :------------ | :----: | :------------------------------------------------------- | :------------------------------ | :--------------------------------------------------------------- |
-| `/scrape`     | `POST` | Scrapeo con lógica de navegador (Playwright).            | `url`, `stealth`, `page_action` | Capturas de pantalla, manipulación de DOM y extracción compleja. |
-| `/run-python` | `POST` | Ejecución directa de scripts Python en el VPS.           | `code`                          | Tareas de sistema, gestión de archivos PNG y lógica de backend.  |
-| `/run-async`  | `POST` | Ejecución de scripts Python asíncronos (No bloqueantes). | `code`, `env`, `timeout`        | Procesos largos o con esperas (`time.sleep`) sin colgar la API.  |
-| `/healthz`    | `GET`  | Verificación de estado del contenedor (Liveness).        | N/A                             | Monitoreo automático y alertas de "Server Down".                 |
+| Endpoint      | Método | Propósito                                                         | Payload Clave                   | Uso Principal                                                    |
+| :------------ | :----: | :---------------------------------------------------------------- | :------------------------------ | :--------------------------------------------------------------- |
+| `/scrape`     | `POST` | Scrapeo con lógica de navegador (Playwright).                     | `url`, `stealth`, `page_action` | Capturas de pantalla, manipulación de DOM y extracción compleja. |
+| `/run-python` | `POST` | Ejecución directa de scripts Python en el VPS.                    | `code`                          | Tareas de sistema, gestión de archivos PNG y lógica de backend.  |
+| `/run-async`  | `POST` | Ejecución de scripts Python asíncronos (No bloqueantes).          | `code`, `env`, `timeout`        | Procesos largos o con esperas (`time.sleep`) sin colgar la API.  |
+| `/check`      | `GET`  | Comprueba el estado y logs de una tarea lanzada por `/run-async`. | `task_id` (ruta)                | Consultas de estado, `stdout`/`stderr` parciales (cap 50000).    |
+| `/healthz`    | `GET`  | Verificación de estado del contenedor (Liveness).                 | N/A                             | Monitoreo automático y alertas de "Server Down".                 |
 
 ---
 
@@ -113,6 +114,27 @@ Versión optimizada de ejecución. Permite definir variables de entorno (`env`) 
 #### 4. Endpoint: `/healthz`
 
 Endpoint de diagnóstico. Si devuelve un status `200 OK`, el motor de Python y el navegador están listos para recibir peticiones.
+
+#### 5. Endpoint: `/check`
+
+Consulta el estado y logs parciales de una tarea iniciada con `/run-async`.
+
+- Ruta: `GET /check/{task_id}` (recibe `task_id` en la ruta).
+- Respuesta: JSON con `status` (p. ej. `running`, `finished`, `error`, `not_found`), `exit_code`, `stdout` y `stderr`.
+- Notas: `stdout` y `stderr` se devuelven como texto parcial (recorte a los últimos 50000 caracteres).
+
+Recomendado en n8n: usar un nodo `HTTP Request` (GET) apuntando a `http://<scrapling-host>/check/{{ $json["task_id"] }}` y reintentar/poll hasta que `status` deje de ser `running`.
+
+Ejemplo de respuesta:
+
+```json
+{
+  "status": "running",
+  "exit_code": null,
+  "stdout": "Últimos 50000 caracteres de stdout...",
+  "stderr": ""
+}
+```
 
 ---
 
