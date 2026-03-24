@@ -159,17 +159,27 @@ async def run_python(req: RunPythonRequest):
     max_chars = 50000
     tmp_path = None
     try:
-        # Create temporary file with the provided code
+        # Prepare and sanitize code content (fix n8n-escaped newlines)
+        code_content = req.code
+        if isinstance(code_content, str) and "\\n" in code_content and "\n" not in code_content:
+            # Replace escaped newline literals with real newlines
+            code_content = code_content.replace("\\r\\n", "\r\n").replace("\\n", "\n")
+
+        # Create temporary file with the provided (sanitized) code
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as tmp:
-            tmp.write(req.code)
+            tmp.write(code_content)
             tmp.flush()
             tmp_path = tmp.name
 
-        # Spawn subprocess asynchronously
+        # Spawn subprocess asynchronously in unbuffered mode and ensure PYTHONUNBUFFERED
+        child_env = dict(os.environ)
+        child_env["PYTHONUNBUFFERED"] = "1"
+
         proc = await asyncio.create_subprocess_exec(
-            sys.executable, tmp_path,
+            sys.executable, "-u", tmp_path,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=child_env,
         )
 
         try:
